@@ -12,10 +12,11 @@ from scipy.stats import skew, kurtosis
 from utils import imstd, eval_mauch_beam, wrap_angle90, angle_diff
 import logging
 from astropy.visualization.wcsaxes import WCSAxes
+import argparse
 
 def create_logger():
     """ Create a console logger """
-    log = logging.getLogger("EVPA disk fitter")
+    log = logging.getLogger("DiskFit")
     cfmt = logging.Formatter(('%(name)s - %(asctime)s %(levelname)s - %(message)s'))
     log.setLevel(logging.DEBUG)
     log.setLevel(logging.INFO)
@@ -29,19 +30,41 @@ def create_logger():
     return log, console, cfmt
 log, log_console_handler, log_formatter = create_logger()
 
-SIGNCONV=-1
-DEBUGPLOT = 0
-DOPLOT = 1
-SNR_CUTOFF = 10.0
-IQS_SPREAD_CUTOFF = 10.0
-ABS_SKEW_CUTOFF = 2.0
-ABS_KURT_CUTOFF = 2.0
-DISK_TORUS_OUTER = 0.276040
-DISK_TORUS_INNER = 0.24
-OBS_PA_OFFSET = 0.0
-FIT_MIN_STOKES_P = 0.01
-TORUS_FILL_CUTOFF = 0.55
-DO_FIT_HV = 0
+parser = argparse.ArgumentParser(description="DiskFit -- program to fit for dipole offsets based on a planetary/lunar disk")
+parser.add_argument("--debugplot", dest="DEBUGPLOT", action="store_true", help="Enable channel by channel interactive visual inspection plots for model and measured EVPA")
+parser.add_argument("--doPlot", dest="DOPLOT", action="store_true", help="Enable plotting for fitted EVPA offsets and histograms")
+parser.add_argument("--snr", "-s", dest="SNR_CUTOFF", default=10., type=float, help="SNR cutoff to apply to Stokes P and I (per channel image)")
+parser.add_argument("--iqs", dest="IQS_SPREAD_CUTOFF", default=10., type=float, help="Inter Quartile Spread in angle distribution cutoff to apply to EVPA (per channel image)")
+parser.add_argument("--skew", dest="ABS_SKEW_CUTOFF", default=2., type=float, help="Absolute skew in angle distribution cutoff to apply to EVPA (per channel image)")
+parser.add_argument("--kurt", dest="ABS_KURT_CUTOFF", default=2., type=float, help="Absolute fisher kurtosis in angle distribution cutoff to apply to EVPA (per channel image)")
+parser.add_argument("--torusout", "-o", dest="DISK_TORUS_OUTER", default=0.276040, type=float, help="Outer torus boundary for contributing EVPA angles (should be the outer limb radius in degrees)")
+parser.add_argument("--torusin", "-i", dest="DISK_TORUS_INNER", default=0.20, type=float, help="Inner torus boundary for contributing EVPA angles (should exclude reflected RFI)")
+parser.add_argument("--obsPAOffset",  dest="OBS_PA_OFFSET", default=0.0, type=float, help="Apply offset rotation (e.g. uncorrected parallactic angle) before fitting")
+parser.add_argument("--minPFrac",  dest="FIT_MIN_STOKES_P", default=0.01, type=float, help="Cutoff fractional polarization contribution to the fit below this")
+parser.add_argument("--torusFillCutoff",  dest="TORUS_FILL_CUTOFF", default=0.55, type=float, help="Discard slices with fewer than this fractional number of points meeting SNR criteria within the torus (mostly empty torii). Expect 0 <= x <= 1.0")
+parser.add_argument("--doFitHV",  dest="DO_FIT_HV", action='store_true', help="Fit also for crosshand phase (assume no circular emission from blackbody -- inner torus cut should be big enough to discard reflected terrestial RFI)")
+parser.add_argument("--signconv",  dest="SIGNCONV", default=-1, help="Ninja parameter -- flips the sign to counter clockwise rotation if negative if the EVPA rotates North through West")
+parser.add_argument("imagePattern", type=str, help="Pattern specifying which images to run fitter on. Expects each slice to conform to WSClean style output, e.g. "
+                                                    "'lunarimgs/moon_snapshot-t0000-$xxx-{}-image.fits', where $xxx will be replaced by frequency slice numbers")
+args = parser.parse_args()
+
+SIGNCONV = args.SIGNCONV
+DEBUGPLOT = args.DEBUGPLOT
+DOPLOT = args.DOPLOT
+SNR_CUTOFF = args.SNR_CUTOFF
+IQS_SPREAD_CUTOFF = args.IQS_SPREAD_CUTOFF
+ABS_SKEW_CUTOFF = args.ABS_SKEW_CUTOFF
+ABS_KURT_CUTOFF = args.ABS_KURT_CUTOFF
+DISK_TORUS_OUTER = args.DISK_TORUS_OUTER
+DISK_TORUS_INNER = args.DISK_TORUS_INNER
+OBS_PA_OFFSET = args.OBS_PA_OFFSET
+FIT_MIN_STOKES_P = args.FIT_MIN_STOKES_P
+TORUS_FILL_CUTOFF = args.TORUS_FILL_CUTOFF
+DO_FIT_HV = args.DO_FIT_HV
+
+log.info(':::DiskFit running with the following parameters:::\n'+
+         '\n'.join(f'{k.ljust(30, " ")} = {v}' for k, v in vars(args).items())+
+         "\n === DiskFit ===")
 
 if DEBUGPLOT or DOPLOT:
     import matplotlib.pyplot as plt
@@ -49,9 +72,7 @@ if DEBUGPLOT or DOPLOT:
     from matplotlib.transforms import Affine2D
     import matplotlib.patches as patches
 
-timestamp = sys.argv[1]
-
-fio,fqo,fuo,fvo = ["lunarimgs/moon_snapshot-t00{}-xxx-{}-image.fits".format(timestamp,st) for st in "IQUV"]
+fio,fqo,fuo,fvo = [args.imagePattern.format(st) for st in "IQUV"]
 
 all_model_evpa = []
 all_measured_evpa = []
@@ -63,7 +84,7 @@ fitted_slices = 0
 nu_considered = set([])
 
 ### POPULATE CUBE FILS TO FIT ###
-map_list = list(map(lambda a:"{0:04d}".format(a), range(20)))
+map_list = list(map(lambda a:"{0:04d}".format(a), range(9999)))
 plane_rms = []
 plane_nu = []
 plane_q3_evpa = {}
@@ -73,14 +94,14 @@ plane_mean_evpa = {}
 plane_std_evpa = {}
 
 for nui in map_list:
-    fi = fio.replace("xxx",nui)
+    fi = fio.replace("$xxx",nui)
     if not os.path.exists(fi):
         continue
     else:
         log.info(f"Pattern will load '{fi}'")
-    fq = fqo.replace("xxx",nui)
-    fu = fuo.replace("xxx",nui)
-    fv = fvo.replace("xxx",nui)
+    fq = fqo.replace("$xxx",nui)
+    fu = fuo.replace("$xxx",nui)
+    fv = fvo.replace("$xxx",nui)
 
     hdu = fits.open(fi)[0]
     wcs = WCS(hdu.header)
@@ -109,12 +130,12 @@ flagged_planes = np.array(plane_rms) > np.nanpercentile(plane_rms, 95.0)
 
 nuii = -1
 for nui in map_list:
-    fi = fio.replace("xxx",nui)
+    fi = fio.replace("$xxx",nui)
     if not os.path.exists(fi):
         continue
-    fq = fqo.replace("xxx",nui)
-    fu = fuo.replace("xxx",nui)
-    fv = fvo.replace("xxx",nui)
+    fq = fqo.replace("$xxx",nui)
+    fu = fuo.replace("$xxx",nui)
+    fv = fvo.replace("$xxx",nui)
 
     nuii += 1
     if flagged_planes[nuii]:
