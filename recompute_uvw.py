@@ -58,7 +58,7 @@ meerkat = ephem.Observer()
 meerkat.lat = "-30:42:47.41"
 meerkat.long = "21:26:38.0"
 meerkat.elevation = 1054
-#meerkat.epoch = ephem.today #ephem.J2000
+meerkat.epoch = ephem.J2000
 
 with tbl(args.ms, ack=False) as t:
     with taql("select * from $t where FIELD_ID=={}".format(args.field)) as tt:
@@ -122,8 +122,8 @@ for ti, t in enumerate(time):
     fieldEphem.compute(meerkat)
     az[ti] = fieldEphem.az
     el[ti] = fieldEphem.alt
-    ra[ti] = fieldEphem.ra
-    dec[ti] = fieldEphem.dec
+    ra[ti] = fieldEphem.a_ra
+    dec[ti] = fieldEphem.a_dec
 
 if args.plot:
     def __angdiff(a, b):
