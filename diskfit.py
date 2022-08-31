@@ -38,16 +38,18 @@ parser.add_argument("--iqs", dest="IQS_SPREAD_CUTOFF", default=10., type=float, 
 parser.add_argument("--skew", dest="ABS_SKEW_CUTOFF", default=2., type=float, help="Absolute skew in angle distribution cutoff to apply to EVPA (per channel image)")
 parser.add_argument("--kurt", dest="ABS_KURT_CUTOFF", default=2., type=float, help="Absolute fisher kurtosis in angle distribution cutoff to apply to EVPA (per channel image)")
 parser.add_argument("--torusout", "-o", dest="DISK_TORUS_OUTER", default=0.276040, type=float, help="Outer torus boundary for contributing EVPA angles (should be the outer limb radius in degrees)")
-parser.add_argument("--torusin", "-i", dest="DISK_TORUS_INNER", default=0.20, type=float, help="Inner torus boundary for contributing EVPA angles (should exclude reflected RFI)")
+parser.add_argument("--torusin", "-i", dest="DISK_TORUS_INNER", default=0.25, type=float, help="Inner torus boundary for contributing EVPA angles (should exclude reflected RFI)")
 parser.add_argument("--obsPAOffset",  dest="OBS_PA_OFFSET", default=0.0, type=float, help="Apply offset rotation (e.g. uncorrected parallactic angle) before fitting")
 parser.add_argument("--minPFrac",  dest="FIT_MIN_STOKES_P", default=0.01, type=float, help="Cutoff fractional polarization contribution to the fit below this")
-parser.add_argument("--torusFillCutoff",  dest="TORUS_FILL_CUTOFF", default=0.55, type=float, help="Discard slices with fewer than this fractional number of points meeting SNR criteria within the torus (mostly empty torii). Expect 0 <= x <= 1.0")
+parser.add_argument("--torusFillCutoff",  dest="TORUS_FILL_CUTOFF", default=0.35, type=float, help="Discard slices with fewer than this fractional number of points meeting SNR criteria within the torus (mostly empty torii). Expect 0 <= x <= 1.0")
 parser.add_argument("--doFitHV",  dest="DO_FIT_HV", action='store_true', help="Fit also for crosshand phase (assume no circular emission from blackbody -- inner torus cut should be big enough to discard reflected terrestial RFI)")
-parser.add_argument("--signconv",  dest="SIGNCONV", default=-1, help="Ninja parameter -- flips the sign to counter clockwise rotation if negative if the EVPA rotates North through West")
+parser.add_argument("--verbose", "-v", dest="VERBOSE", action='store_true', help="Increase verbosity")
+parser.add_argument("--signconv",  dest="SIGNCONV", default=+1, help="Ninja parameter -- flips the sign to counter clockwise rotation if negative if the EVPA rotates North through West")
 parser.add_argument("imagePattern", type=str, help="Pattern specifying which images to run fitter on. Expects each slice to conform to WSClean style output, e.g. "
                                                     "'lunarimgs/moon_snapshot-t0000-$xxx-{}-image.fits', where $xxx will be replaced by frequency slice numbers")
 args = parser.parse_args()
 
+VERBOSE = args.VERBOSE
 SIGNCONV = args.SIGNCONV
 DEBUGPLOT = args.DEBUGPLOT
 DOPLOT = args.DOPLOT
@@ -102,6 +104,9 @@ for nui in map_list:
     fq = fqo.replace("$xxx",nui)
     fu = fuo.replace("$xxx",nui)
     fv = fvo.replace("$xxx",nui)
+    if any(map(lambda x: not os.path.exists(x), [fq, fu, fv])):
+        log.critical(f"Missing Q, U or V slices associated with {fi}")
+        sys.exit(1)
 
     hdu = fits.open(fi)[0]
     wcs = WCS(hdu.header)
@@ -170,7 +175,9 @@ for nui in map_list:
 
     wcsslice = wcs.slice(np.s_[0,0,:,:])
     p = (u**2 + q**2) / i**2
-    rms = imstd(np.sqrt(u**2 + q**2)) # detect rms in stokes P
+    rms = imstd(v) # detect rms in stokes V
+    if VERBOSE:
+        log.info(f"Estimated background noise as {rms*1e6:.3f} muJy")
     isnrmask = i > rms * SNR_CUTOFF
 
     psnrmask = np.logical_and(np.logical_and(p > FIT_MIN_STOKES_P, p <= 1.0),
@@ -181,7 +188,11 @@ for nui in map_list:
     rim_mask = np.logical_and(xx**2 + yy**2 < DISK_TORUS_OUTER**2,
                               xx**2 + yy**2 > DISK_TORUS_INNER**2)
     mask = rim_mask * psnrmask * isnrmask 
-    
+    if VERBOSE:
+        log.info(f"Number of points in rim mask: {np.sum(rim_mask)}")
+        log.info(f"Number of points in stokes P mask: {np.sum(rim_mask)}")
+        log.info(f"Number of points in stokes I mask: {np.sum(rim_mask)}")
+
     if mask.sum() == 0:
         log.warn(f"Empty / noisy slice at {crfreq:.3f} GHz")
         continue
@@ -325,14 +336,14 @@ for nui in map_list:
         plt.legend()
         log.info("Saving 'Offsets.{0:.3f}GHz.png'...".format(crfreq))
         plt.savefig("Offsets.{0:.3f}GHz.png".format(crfreq))
-
-        plt.figure(figsize=(8,5))
-        plt.title("HV phase distribution {0:.3f} GHz".format(crfreq))
-        plt.hist(measured_hvphaseang.ravel()[selvec], bins=50, weights=normw)
-        plt.xlabel("Angle offset [deg]")
-        plt.ylabel("Weighted count")
-        log.info("Saving 'HVphaseOffsets.{0:.3f}GHz.png'...".format(crfreq))
-        plt.savefig("HVphaseOffsets.{0:.3f}GHz.png".format(crfreq))
+        if DO_FIT_HV:
+            plt.figure(figsize=(8,5))
+            plt.title("HV phase distribution {0:.3f} GHz".format(crfreq))
+            plt.hist(measured_hvphaseang.ravel()[selvec], bins=50, weights=normw)
+            plt.xlabel("Angle offset [deg]")
+            plt.ylabel("Weighted count")
+            log.info("Saving 'HVphaseOffsets.{0:.3f}GHz.png'...".format(crfreq))
+            plt.savefig("HVphaseOffsets.{0:.3f}GHz.png".format(crfreq))
         plt.close()
     fitted_slices += 1
 

@@ -2,9 +2,17 @@ import numpy as np
 def imstd(polmap, nbox=50):
     nx_new = polmap.shape[3] // nbox
     ny_new = polmap.shape[2] // nbox
-    boxrms = np.nanstd(polmap.reshape(nx_new, nbox, ny_new, nbox), 
-                       axis=(1,3))
-    return np.min(boxrms)
+    boxrms = []
+    for iy in range(nbox):
+        ylow = iy*ny_new
+        yhigh = min((iy+1)*ny_new, polmap.shape[2])
+        for ix in range(nbox):
+            xlow = iy*nx_new
+            xhigh = min((iy+1)*nx_new, polmap.shape[2])
+            boxrms.append(np.nanstd(polmap[xlow:xhigh, ylow:yhigh]))
+    #boxrms = np.nanstd(polmap.reshape(nx_new, nbox, ny_new, nbox), 
+    #                   axis=(1,3))
+    return np.nanmin(boxrms)
 
 def wrap_angle90(x):
     return (x + 90.) % 180. - 90.
