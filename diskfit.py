@@ -190,8 +190,8 @@ for nui in map_list:
     mask = rim_mask * psnrmask * isnrmask 
     if VERBOSE:
         log.info(f"Number of points in rim mask: {np.sum(rim_mask)}")
-        log.info(f"Number of points in stokes P mask: {np.sum(rim_mask)}")
-        log.info(f"Number of points in stokes I mask: {np.sum(rim_mask)}")
+        log.info(f"Number of points in stokes P mask: {np.sum(psnrmask)}")
+        log.info(f"Number of points in stokes I mask: {np.sum(isnrmask)}")
 
     if mask.sum() == 0:
         log.warn(f"Empty / noisy slice at {crfreq:.3f} GHz")

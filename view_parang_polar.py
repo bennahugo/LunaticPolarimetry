@@ -12,44 +12,68 @@ from astropy.visualization.wcsaxes import WCSAxes
 import os
 import sys
 from astropy import constants
-try:
-    print("Using corrective feed angle: {0:0.3f} deg".format(float(sys.argv[1])))
-    print("Using corrective Faraday depth {0:0.3f} rad/m^2".format(float(sys.argv[2])))
-except:
-    print("Usage view_parang_polar.py feed_offset_deg ionospheric_fd")
+import logging
+import argparse
+from utils import imstd, eval_mauch_beam, wrap_angle90, angle_diff
+
+def create_logger():
+    """ Create a console logger """
+    log = logging.getLogger("EVPA plotter - quiver")
+    cfmt = logging.Formatter(('%(name)s - %(asctime)s %(levelname)s - %(message)s'))
+    log.setLevel(logging.DEBUG)
+    log.setLevel(logging.INFO)
+
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    console.setFormatter(cfmt)
+
+    log.addHandler(console)
+
+    return log, console, cfmt
+log, log_console_handler, log_formatter = create_logger()
 
 
-def imstd(polmap, nbox=100):
-    nx_new = polmap.shape[3] // nbox
-    ny_new = polmap.shape[2] // nbox
-    boxrms = np.nanstd(polmap.reshape(nx_new, nbox, ny_new, nbox), 
-                       axis=(1,3))
-    return np.min(boxrms)
+parser = argparse.ArgumentParser(description="EVPA plotter - quiver")
+parser.add_argument("imagePattern", type=str, help="Pattern specifying which images to run fitter on. Expects each slice to conform to WSClean style output, e.g. "
+                                                    "'lunarimgs/moon_snapshot-t0000-$xxx-{}-image.fits', where $xxx will be replaced by frequency slice numbers")
+parser.add_argument("--torusout", "-o", dest="DISK_TORUS_OUTER", default=0.276040, type=float, help="Outer torus boundary for contributing EVPA angles (should be the outer limb radius in degrees)")
+parser.add_argument("--torusin", "-i", dest="DISK_TORUS_INNER", default=0.15, type=float, help="Inner torus boundary for contributing EVPA angles (should exclude reflected RFI)")
+parser.add_argument("--correctfeed", "-cf", dest="CORRECTIVE_FEED_ANGLE", default=0.0, type=float, help="Add corrective feed angle - as fited. Default 0.0")
+parser.add_argument("--correctfd", "-cfd", dest="CORRECTIVE_FARADAY_DEPTH", default=0.0, type=float, help="Add corrective faraday depth / RM - as fited. Default 0.0")
+parser.add_argument("--quiverspacing", dest="QUIVER_SPACE", default=30, type=int, help="Aimed quiver spacing in pixels")
+parser.add_argument("--snr", "-s", dest="SNR_CUTOFF", default=10., type=float, help="SNR cutoff to apply to Stokes P and I (per channel image)")
+parser.add_argument("--obsPAOffset",  dest="OBS_PA_OFFSET", default=0.0, type=float, help="Apply offset rotation (e.g. uncorrected parallactic angle) before plotting")
+parser.add_argument("--minPFrac",  dest="FIT_MIN_STOKES_P", default=0.01, type=float, help="Cutoff fractional polarization contribution to the fit below this")
+parser.add_argument("--verbose", "-v", dest="VERBOSE", action='store_true', help="Increase verbosity")
+args = parser.parse_args()
 
-def wrap_angle90(x):
-    return (x + 90.) % 180. - 90.
+fio,fqo,fuo,fvo = [args.imagePattern.format(st) for st in "IQUV"]
 
-def angle_diff( angle1, angle2 ):
-    diff = ( angle2 - angle1 + 90 ) % 180 - 90
-    return ((diff + 180) * (diff < -90)) + diff
+DISK_TORUS_OUTER = args.DISK_TORUS_OUTER
+DISK_TORUS_INNER = args.DISK_TORUS_INNER
+FIT_MIN_STOKES_P = args.FIT_MIN_STOKES_P
+CORRECT_FA = args.CORRECTIVE_FEED_ANGLE
+CORRECT_FD = args.CORRECTIVE_FARADAY_DEPTH
+VERBOSE = args.VERBOSE
+QUIVER_SPACE = np.abs(args.QUIVER_SPACE)
+log.info(("Using corrective feed angle: {0:0.3f} deg".format(CORRECT_FA)))
+log.info(("Using corrective Faraday depth {0:0.3f} rad/m^2".format(CORRECT_FD)))
 
-arr_lat = -30.71316944
-SNR_CUTOFF = 20.0
+SNR_CUTOFF = args.SNR_CUTOFF
+OBS_PA_OFFSET = args.OBS_PA_OFFSET
+log.info("Using corrective PA rotation {0:0.3f} deg".format(OBS_PA_OFFSET))
+log.info("Quivers will be plotted for SNR of {0:0.2f}x".format(SNR_CUTOFF))
+fl = 0 
+for nui in list(map(lambda a:"{0:04d}".format(a), range(9999))) + ["MFS"]:
+    fi = fio.replace("$xxx",nui)
+    fq = fqo.replace("$xxx",nui)
+    fu = fuo.replace("$xxx",nui)
+    fv = fvo.replace("$xxx",nui)
 
-#fio,fqo,fuo = ["imgs/robust+2.0.coretapered-xxx-{}-image.fits".format(st) for st in "IQU"]
-#fio,fqo,fuo = ["imgs/robust-0.3.untapered.sc0-xxx-{}-image.fits".format(st) for st in "IQU"]
-#fio,fqo,fuo = ["imgs/robust-0.3.untapered.finechan.sc0-xxx-{}-image.fits".format(st) for st in "IQU"]
-#fio,fqo,fuo = ["moon/moon_avg-xxx-{}-image.fits".format(st) for st in "IQU"]
-fio,fqo,fuo = ["moonwithlunarX/moon_snapshot-t0000-xxx-{}-image.fits".format(st) for st in "IQU"]
-
-
-for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
-#for nui in ["MFS"]:
-    fi = fio.replace("xxx",nui)
-    fq = fqo.replace("xxx",nui)
-    fu = fuo.replace("xxx",nui)
-    if not all([os.path.exists(f) for f in [fi,fq,fu]]):
+    if not all([os.path.exists(f) for f in [fi,fq,fu,fv]]):
         continue
+    log.info(f"Pattern will load '{fi}'")
+    fl += 1
     hdu = fits.open(fi)[0]
     wcs = WCS(hdu.header)
     bmaj = hdu.header["BMAJ"] * 3600
@@ -61,21 +85,15 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
     scale = np.abs(wcs.pixel_scale_matrix[0,0])
     crfreq = (wcs.wcs.crval[2] * 1e-9)
     #mjy2K = 1222 / ((wcs.wcs.crval[2] * 1e-9)**2*bmaj*bmin)
-    x = arange(-npix//2,+npix//2) * scale / 60 * crfreq
-    mauchbeam = 1 - \
-                            0.3514 * np.abs(x**2) / 10**3 + \
-                            0.5600 * np.abs(x**2)**2 / 10**7 - \
-                            0.0474 * np.abs(x**2)**3 / 10**10 + \
-                            0.00078 * np.abs(x**2)**4/10**13 + \
-                            0.00019 * np.abs(x**2)**5 / 10**16
-    feedcorr = np.deg2rad(2 * float(sys.argv[1])) + \
-               (2.0 * (constants.c.value / (crfreq * 1.0e9))**2 * float(sys.argv[2]))
+    mauchbeam = eval_mauch_beam(npix, scale, crfreq)
+    feedcorr = np.deg2rad(2 * CORRECT_FA) + \
+               (2.0 * (constants.c.value / (crfreq * 1.0e9))**2 * CORRECT_FD)
     
     i = hdu.data
     u = fits.open(fu)[0].data
     q = fits.open(fq)[0].data
-
-    PA = np.deg2rad(-0.5695)
+    v = fits.open(fv)[0].data
+    PA = np.deg2rad(OBS_PA_OFFSET)
 
     Qcorr = q * np.cos(-2*PA) + u * np.sin(-2*PA)
     Ucorr = u * np.cos(-2*PA) - q * np.sin(-2*PA)
@@ -86,19 +104,26 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
     ### PLOT HISTOGRAM
     ############################
     p = (u**2 + q**2) / i**2
-    rms = imstd(np.sqrt(u**2 + q**2)) # detect rms in stokes P
-    isnrmask = i > rms * SNR_CUTOFF
+    rms = imstd(v) # detect rms in stokes V
+    if VERBOSE:
+        log.info(f"Estimated background noise as {rms*1e6:.3f} muJy")
 
-    psnrmask = np.logical_and(np.logical_and(p > 0.02, p <= 1.0),
+    isnrmask = i > rms * SNR_CUTOFF
+    psnrmask = np.logical_and(np.logical_and(p > FIT_MIN_STOKES_P, p <= 1.0),
                               np.sqrt(u**2 + q**2) > rms * SNR_CUTOFF)
     xx, yy = meshgrid((arange(npix)-npix//2)*scale,
                       (arange(npix)-npix//2)*scale)
+    moonmask = xx**2 + yy**2 < DISK_TORUS_OUTER**2
+    rim_mask = np.logical_and(xx**2 + yy**2 < DISK_TORUS_OUTER**2,
+                              xx**2 + yy**2 > DISK_TORUS_INNER**2)
+    if VERBOSE:
+        log.info(f"Number of points in rim mask: {np.sum(rim_mask)}")
+        log.info(f"Number of points in stokes P mask: {np.sum(psnrmask)}")
+        log.info(f"Number of points in stokes I mask: {np.sum(isnrmask)}")
 
-    rim_mask = np.logical_and(xx**2 + yy**2 < 0.276040**2,
-                              xx**2 + yy**2 > 0.200000**2)
     mask = np.float64(rim_mask * isnrmask * psnrmask)
     if mask.sum() == 0:
-        print("Empty / noisy slice at {0:.3f} GHz".format(crfreq))
+        log.warn("Empty / noisy slice at {0:.3f} GHz".format(crfreq))
         continue
     mask[mask == 0] = np.nan
 
@@ -117,10 +142,11 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
     normw = measured_weight.ravel()[selvec] / np.sum(measured_weight.ravel()[selvec])
     errvec = angle_diff(model_evpa.ravel()[selvec],
                         measured_evpa.ravel()[selvec])
-    print("Mean offset: {0:.3f} @ {1:.3f} GHz".format(np.average(errvec, weights=normw), crfreq))
-    print("50% Percentile offset: {0:.3f} @ {1:.3f} GHz".format(np.percentile(errvec, 50.0), crfreq))
-    print("25% Percentile offset: {0:.3f} @ {1:.3f} GHz".format(np.percentile(errvec, 25.0), crfreq))
-    print("75% Percentile offset: {0:.3f} @ {1:.3f} GHz".format(np.percentile(errvec, 75.0), crfreq))
+    log.info(f"At {crfreq} GHz:")
+    log.info("\tMean offset: {0:.3f}".format(np.average(errvec, weights=normw)))
+    log.info("\t50% Percentile offset: {0:.3f}".format(np.percentile(errvec, 50.0)))
+    log.info("\t25% Percentile offset: {0:.3f}".format(np.percentile(errvec, 25.0)))
+    log.info("\t75% Percentile offset: {0:.3f}".format(np.percentile(errvec, 75.0)))
 
     plt.figure(figsize=(8,5))
     plt.title("Offset distribution {0:.3f} GHz".format(crfreq))
@@ -142,7 +168,7 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
     plt.xlabel("Angle offset [deg]")
     plt.ylabel("Weighted count")
     plt.legend()
-    print("Saving 'Offsets.corrected.{0:.3f}GHz.png'...".format(crfreq))
+    log.info("Saving 'Offsets.corrected.{0:.3f}GHz.png'...".format(crfreq))
     plt.savefig("Offsets.corrected.{0:.3f}GHz.png".format(crfreq))
     
 
@@ -150,10 +176,9 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
     # Plot quiver plot over Stokes I
     ######################################
     transform = Affine2D()
-    transform.scale(scale)
-    transform.translate(-npix*0.5*scale,
+    transform.scale(-scale,scale)
+    transform.translate(npix*0.5*scale,
                         -npix*0.5*scale)
-    transform.rotate(arr_lat)    # radians
     metadata = {
             "name": ['lon','lat'],
             "type": ['longitude','latitude'],
@@ -163,13 +188,6 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
     }
 
     wcsslice = wcs.slice(np.s_[0,0,:,:])
-    moonmask = (meshgrid((arange(npix)-npix//2)*scale,(arange(npix)-npix//2)*scale)[0]**2 + 
-                            meshgrid((arange(npix)-npix//2)*scale,(arange(npix)-npix//2)*scale)[1]**2 < 0.276040**2).reshape(wcs.pixel_shape[::-1])
-    rms = imstd(np.sqrt(u**2 + q**2))
-    isnrmask = i > rms * 5.0
-    p = (u**2 + q**2) / i**2
-    psnrmask = np.logical_and(np.logical_and(p > 0.02, p <= 1.0),
-                              np.sqrt(u**2 + q**2) > rms * 5.0)
     
     fig = plt.figure()
     ax = WCSAxes(fig, [0.1, 0.1, 0.8, 0.8], aspect='equal',
@@ -182,8 +200,8 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
                        )
     cbar = fig.colorbar(i_plot)
     cbar.set_label("mJy/beam")
-    ax.coords['lon'].set_axislabel("Relative Az [East through West] [deg]")
-    ax.coords['lat'].set_axislabel("Relative Elev [deg]")
+    ax.coords['lon'].set_axislabel("Relative RA [<---EAST] [deg]")
+    ax.coords['lat'].set_axislabel("Relative DEC [NORTH--->] [deg]")
     
     ax.grid()
     
@@ -191,9 +209,10 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
     
     xx0, xx1 = ax.get_xlim()
     yy0, yy1 = ax.get_ylim()
-    factor = [30, 30]
-    nx_new = npix // factor[0]
-    ny_new = npix // factor[1]
+    factors = np.array(list(filter(lambda x: npix % x == 0, np.arange(npix) + 1)))
+    factor = factors[np.argmin(np.abs(factors - QUIVER_SPACE))] # closest divisor to given pixel spacing for quivers
+    nx_new = npix // factor
+    ny_new = npix // factor
     X,Y = np.meshgrid(np.linspace(xx0,xx1,nx_new,endpoint=True),
                                         np.linspace(yy0,yy1,ny_new,endpoint=True))
     delta_bin = X[0,1] - X[0,0]
@@ -207,14 +226,14 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
     masked_u = u * mask
     masked_i = i * mask
 
-    I_bin = np.nanmedian(masked_i.reshape(nx_new, factor[0],
-                                          ny_new, factor[1]),
+    I_bin = np.nanmedian(masked_i.reshape(nx_new, factor,
+                                          ny_new, factor),
                          axis=(3,1))
-    Q_bin = np.nanmedian(masked_q.reshape(nx_new, factor[0],
-                                          ny_new, factor[1]),
+    Q_bin = np.nanmedian(masked_q.reshape(nx_new, factor,
+                                          ny_new, factor),
                          axis=(3,1))
-    U_bin = np.nanmedian(masked_u.reshape(nx_new, factor[0],
-                                          ny_new, factor[1]),
+    U_bin = np.nanmedian(masked_u.reshape(nx_new, factor,
+                                          ny_new, factor),
                          axis=(3,1))
   
     # polarization angle
@@ -234,18 +253,12 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
     
     ax.set_ylim(npix//2-1024,npix//2+1024)
     ax.set_xlim(npix//2-1024,npix//2+1024)
-    print("Saving 'Moon.{0:.3f}GHz.png'...".format(crfreq))
+    log.info("Saving 'Moon.{0:.3f}GHz.png'...".format(crfreq))
     plt.savefig("Moon.{0:.3f}GHz.png".format(crfreq))
 
     ###################################
     # Polarization fraction map
     ###################################
-    rms = imstd(np.sqrt(u**2 + q**2))
-    isnrmask = i > rms * 10.0
-    p = (u**2 + q**2) / i**2
-    psnrmask = np.logical_and(np.logical_and(p > 0.02, p <= 1.0),
-                              np.sqrt(u**2 + q**2) > rms * 10.0)
-
     fig = plt.figure()
     ax = WCSAxes(fig, [0.1, 0.1, 0.8, 0.8], aspect='equal',
                              transform=transform, coord_meta=metadata)
@@ -258,11 +271,12 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(50))) + ["MFS"]:
                        vmin=0, vmax=50)
     cbar = fig.colorbar(p_plot)
     cbar.set_label("Fractional polarization [%]")
-    ax.coords['lon'].set_axislabel("Relative Az [East through West] [deg]")
-    ax.coords['lat'].set_axislabel("Relative Elev [deg]")
+    ax.coords['lon'].set_axislabel("Relative RA [<---EAST] [deg]")
+    ax.coords['lat'].set_axislabel("Relative DEC [NORTH--->] [deg]")
     
     ax.grid()
     ax.set_ylim(npix//2-1024,npix//2+1024)
     ax.set_xlim(npix//2-1024,npix//2+1024)
-    print("Saving 'Moon.{0:.3f}GHz.polfrac.png'...".format(crfreq))
+    log.info("Saving 'Moon.{0:.3f}GHz.polfrac.png'...".format(crfreq))
     plt.savefig("Moon.{0:.3f}GHz.polfrac.png".format(crfreq))
+log.info(f"Loaded {fl} files matching pattern")

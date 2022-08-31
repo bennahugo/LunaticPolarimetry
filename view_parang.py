@@ -9,6 +9,7 @@ from astropy.visualization.wcsaxes import WCSAxes
 import os
 import logging
 import argparse
+
 def create_logger():
     """ Create a console logger """
     log = logging.getLogger("EVPA plotter - colourwheel")
@@ -35,7 +36,7 @@ parser.add_argument("--torusin", "-i", dest="DISK_TORUS_INNER", default=0.15, ty
 args = parser.parse_args()
 
 fio,fqo,fuo,fvo = [args.imagePattern.format(st) for st in "IQUV"]
-
+fl = 0
 for nui in list(map(lambda a:"{0:04d}".format(a), range(9999))) + ["MFS"]:
     fi = fio.replace("$xxx",nui)
     fq = fqo.replace("$xxx",nui)
@@ -43,7 +44,7 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(9999))) + ["MFS"]:
     if not all([os.path.exists(f) for f in [fi,fq,fu]]):
         continue
     log.info(f"Pattern will load '{fi}'")
-
+    fl += 1
     with fits.open(fi) as ifi:
         hdu = ifi[0]
         wcs = WCS(hdu.header)
@@ -96,4 +97,4 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(9999))) + ["MFS"]:
     plt.savefig("Moon_EVPA_colourwheel.{0:.3f}MHz.png".format(crfreq*1e-6))
     log.info("Writing 'Moon_EVPA_colourwheel.{0:.3f}MHz.png'".format(crfreq*1e-6))
     plt.close()
-
+log.info(f"Loaded {fl} files matching pattern")
