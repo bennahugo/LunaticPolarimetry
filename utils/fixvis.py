@@ -57,7 +57,7 @@ def dense2sparce_uvw(a1, a2, time, ddid, padded_uvw):
     assert time.size == a1.size
     assert a1.size == a2.size
     ants = np.concatenate((a1, a2))
-    unique_ants = np.unique(ants)
+    unique_ants = np.arange(np.max(ants) + 1)
     na = unique_ants.size
     nbl = na * (na - 1) // 2 + na
     unique_time = np.unique(time)
@@ -108,12 +108,11 @@ def synthesize_uvw(station_ECEF, time, a1, a2,
     assert a1.size == a2.size
 
     ants = np.concatenate((a1, a2))
-    unique_ants = np.unique(ants)
+    unique_ants = np.arange(np.max(ants) + 1)
     unique_time = np.unique(time)
     na = unique_ants.size
     nbl = na * (na - 1) // 2 + na
     ntime = unique_time.size
-
     # keep a full uvw array for all antennae - including those
     # dropped by previous calibration and CASA splitting
     padded_uvw = np.zeros((ntime * nbl, 3), dtype=np.float64)

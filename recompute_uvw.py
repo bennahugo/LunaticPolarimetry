@@ -151,7 +151,7 @@ if args.plot:
     plt.ylabel("v [m]")
 
 with tbl(args.ms, ack=False, readonly=False) as t:
-    with taql("select * from $t where FIELD_ID=={}".format(args.field)) as tt:
+    with taql("select * from $t where FIELD_ID=={} and ANTENNA1!=ANTENNA2".format(args.field)) as tt:
         nrow = tt.nrows()
         nchunk = nrow // args.chunksize + int(nrow % args.chunksize > 0)
         for ci in range(nchunk):

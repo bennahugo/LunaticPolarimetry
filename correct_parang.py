@@ -41,6 +41,7 @@ parser.add_argument("--datadiscriptor", "-dd", type=int, dest="ddid", default=0,
 parser.add_argument("--applyantidiag", "-ad", dest="flipfeeds", action="store_true", help="Apply anti-diagonal matrix -- flips the visibilty hands")
 parser.add_argument("--overridefeedangle", "-fa", dest="fa", default=None, help="Override the receptor angle stored in ::FEED for all antennae")
 parser.add_argument("--storecolumn", "-sc", dest="storecolumn", default="CORRECTED_DATA", help="Column to store corrected data to -- default CORRECTED_DATA -- must exist")
+parser.add_argument("--rawcolumn", "-rc", dest="rawcolumn", default="DATA", help="Column to read uncorrected data from -- default DATA -- must exist")
 parser.add_argument("--noparang", "-npa", dest="noparang", action="store_true", help="Apply no parallactic angle derotation -- useful only to apply feedflip matrix")
 parser.add_argument("--invertPA", "-ip", dest="invertpa", action="store_true", help="Apply parallactic angle corruption instead of correction")
 parser.add_argument("--crosshandphase", "-chp", dest="crossphase", default=0.0, type=float, help="Apply crosshand phase in degrees")
@@ -220,7 +221,7 @@ if not args.sim:
             for ci in range(nchunk):
                 cl = ci * args.chunksize
                 crow = min(nrow - ci * args.chunksize, args.chunksize)
-                data = tt.getcol("DATA", startrow=cl, nrow=crow)
+                data = tt.getcol(args.rawcolumn, startrow=cl, nrow=crow)
                 if data.shape[2] != 4:
                     raise RuntimeError("Data must be full correlation")
                 data = data.reshape(crow, nchan, 2, 2)
