@@ -37,7 +37,8 @@ parser = argparse.ArgumentParser(description="EVPA plotter - quiver")
 parser.add_argument("imagePattern", type=str, help="Pattern specifying which images to run fitter on. Expects each slice to conform to WSClean style output, e.g. "
                                                     "'lunarimgs/moon_snapshot-t0000-$xxx-{}-image.fits', where $xxx will be replaced by frequency slice numbers")
 parser.add_argument("--torusout", "-o", dest="DISK_TORUS_OUTER", default=0.276040, type=float, help="Outer torus boundary for contributing EVPA angles (should be the outer limb radius in degrees)")
-parser.add_argument("--torusin", "-i", dest="DISK_TORUS_INNER", default=0.15, type=float, help="Inner torus boundary for contributing EVPA angles (should exclude reflected RFI)")
+parser.add_argument("--torusin", "-i", dest="DISK_TORUS_INNER", default=0.25, type=float, help="Inner torus boundary for contributing EVPA angles (should exclude reflected RFI)")
+parser.add_argument("--torusFillCutoff",  dest="TORUS_FILL_CUTOFF", default=0.35, type=float, help="Discard slices with fewer than this fractional number of points meeting SNR criteria within the torus (mostly empty torii). Expect 0 <= x <= 1.0")
 parser.add_argument("--correctfeed", "-cf", dest="CORRECTIVE_FEED_ANGLE", default=0.0, type=float, help="Add corrective feed angle - as fited. Default 0.0")
 parser.add_argument("--correctfd", "-cfd", dest="CORRECTIVE_FARADAY_DEPTH", default=0.0, type=float, help="Add corrective faraday depth / RM - as fited. Default 0.0")
 parser.add_argument("--quiverspacing", dest="QUIVER_SPACE", default=30, type=int, help="Aimed quiver spacing in pixels")
@@ -54,6 +55,8 @@ DISK_TORUS_INNER = args.DISK_TORUS_INNER
 FIT_MIN_STOKES_P = args.FIT_MIN_STOKES_P
 CORRECT_FA = args.CORRECTIVE_FEED_ANGLE
 CORRECT_FD = args.CORRECTIVE_FARADAY_DEPTH
+TORUS_FILL_CUTOFF = args.TORUS_FILL_CUTOFF
+
 VERBOSE = args.VERBOSE
 QUIVER_SPACE = np.abs(args.QUIVER_SPACE)
 log.info(("Using corrective feed angle: {0:0.3f} deg".format(CORRECT_FA)))
@@ -121,10 +124,16 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(9999))) + ["MFS"]:
         log.info(f"Number of points in stokes P mask: {np.sum(psnrmask)}")
         log.info(f"Number of points in stokes I mask: {np.sum(isnrmask)}")
 
-    mask = np.float64(rim_mask * isnrmask * psnrmask)
+    mask = rim_mask * isnrmask * psnrmask
+    rim_sel_frac = np.sum(mask) * 1.0 / np.sum(rim_mask)
+    if rim_sel_frac < TORUS_FILL_CUTOFF:
+        log.warn(f"Only {rim_sel_frac*100.:.2f}% of the limb is of sufficient SNR, "
+                 f"skipping slice at {crfreq:.3f} GHz")
+        continue
     if mask.sum() == 0:
         log.warn("Empty / noisy slice at {0:.3f} GHz".format(crfreq))
         continue
+    mask = np.float64(mask)
     mask[mask == 0] = np.nan
 
     masked_q = q.copy()[0,0,:,:] * mask
