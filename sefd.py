@@ -40,22 +40,30 @@ def __padbuffer(buffer, expbuffer, rowsel, exposure, data, time, blindx):
 
 parser = argparse.ArgumentParser(description="SEFD computer -- program to compute SEFD from visibility noise")
 parser.add_argument("--ddid", dest="DDID", default=0, type=int, help="Select DDID - usually just equal to SPW")
+parser.add_argument("--scan", dest="SCAN", default="*", type=str, help="Select by SCAN NUMBER")
 parser.add_argument("--fieldid", "-fi", dest="FIELD", default=0, type=int, help="FIELD id to compute SEFD for")
 parser.add_argument("--chunksize", dest="CHUNKSIZE", default=10000, type=int, help="Chunk size")
 parser.add_argument("--datacolumn", dest="COLUMN", default="CORRECTED_DATA", type=str, help="Data column to read (should be flux calibrated)")
 parser.add_argument("--modeldatacolumn", dest="SUBCOLUMN", default="MODEL_DATA", type=str, help="Data column to read (should be flux calibrated)")
 parser.add_argument("--disablesubevenodd", dest="DOSUBEVENODD", action="store_false", help="By default even and odd timestamps (decorreclated) are subtracted to further remove sky flux contribution, this disables this behaviour")
+parser.add_argument("--vmin", dest="VMIN", default=0, type=float, help="Plot vmin (default 0 Jy)")
+parser.add_argument("--vmax", dest="VMAX", default=900, type=float, help="Plot vmin (default 900 Jy)")
+
 parser.add_argument("ms", type=str, help="Database")
 
 args = parser.parse_args()
 
 ONLYCHUNK = None
+VMIN = args.VMIN
+VMAX = args.VMAX
 FIELD = args.FIELD
 DDID = args.DDID
 COLUMN = args.COLUMN
 SUBCOLUMN = None if args.SUBCOLUMN.strip() == "" else args.SUBCOLUMN.strip()
 CHUNKSIZE = args.CHUNKSIZE
 DOSUBEVENODD = args.DOSUBEVENODD
+SCANSEL = args.SCAN
+log.info(f"Will select scans matching '{SCANSEL}'")
 if DOSUBEVENODD:
     log.info("Will estimate noise by subtracting even and odd timestamps")
 if SUBCOLUMN:
@@ -92,7 +100,8 @@ noisesum = np.zeros((NCHAN, 4), dtype=np.float64)
 M = np.zeros((NCHAN, 4), dtype=np.int64)
 
 with tbl(ms, ack=False, readonly=True) as t:
-    with taql("select * from $t where FIELD_ID=={}".format(FIELD)) as tt:
+    scanseltaql = f"AND SCAN_NUMBER=={SCANSEL}" if SCANSEL != "*" else ""
+    with taql("select * from $t where FIELD_ID=={} {}".format(FIELD, scanseltaql)) as tt:
         nrow = tt.nrows()
         nchunk = nrow // CHUNKSIZE + int(nrow % CHUNKSIZE > 0)
         for ci in range(nchunk) if not ONLYCHUNK else ONLYCHUNK:
@@ -184,5 +193,7 @@ plt.plot(chan_freqs*1e-6, np.sqrt(0.5 * (SEFD[:, 0]**2 + SEFD[:, 3]**2)), label=
 plt.legend()
 plt.xlabel("Frequency [MHz]")
 plt.ylabel("SEFD [Jy]")
+plt.ylim(VMIN,VMAX)
+plt.grid(True)
 plt.show()
 
