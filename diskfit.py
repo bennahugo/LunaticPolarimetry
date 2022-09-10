@@ -45,6 +45,9 @@ parser.add_argument("--torusFillCutoff",  dest="TORUS_FILL_CUTOFF", default=0.35
 parser.add_argument("--doFitHV",  dest="DO_FIT_HV", action='store_true', help="Fit also for crosshand phase (assume no circular emission from blackbody -- inner torus cut should be big enough to discard reflected terrestial RFI)")
 parser.add_argument("--verbose", "-v", dest="VERBOSE", action='store_true', help="Increase verbosity")
 parser.add_argument("--signconv",  dest="SIGNCONV", default=+1, help="Ninja parameter -- flips the sign to counter clockwise rotation if negative if the EVPA rotates North through West")
+parser.add_argument("--lowestfreq", dest="LOWFREQ", default=-np.inf, type=float, help="Lowest frequency (default disabled) -- specifies cutoff for loading frequency (in MHz) cubes for fitting")
+parser.add_argument("--highestfreq", dest="HIGHFREQ", default=+np.inf, type=float, help="Highest frequency (default disabled) -- specifies cutoff for loading frequency (in MHz) cubes for fitting")
+
 parser.add_argument("imagePattern", type=str, help="Pattern specifying which images to run fitter on. Expects each slice to conform to WSClean style output, e.g. "
                                                     "'lunarimgs/moon_snapshot-t0000-$xxx-{}-image.fits', where $xxx will be replaced by frequency slice numbers")
 args = parser.parse_args()
@@ -63,6 +66,8 @@ OBS_PA_OFFSET = args.OBS_PA_OFFSET
 FIT_MIN_STOKES_P = args.FIT_MIN_STOKES_P
 TORUS_FILL_CUTOFF = args.TORUS_FILL_CUTOFF
 DO_FIT_HV = args.DO_FIT_HV
+LOWFREQ = args.LOWFREQ
+HIGHFREQ = args.HIGHFREQ
 
 log.info(':::DiskFit running with the following parameters:::\n'+
          '\n'.join(f'{k.ljust(30, " ")} = {v}' for k, v in vars(args).items())+
@@ -110,6 +115,10 @@ for nui in map_list:
 
     hdu = fits.open(fi)[0]
     wcs = WCS(hdu.header)
+    if hdu.header["CUNIT3"].strip() != "Hz":
+        raise RuntimeError("Expect axis 3 of FITS file to be frequency axis -- unit Hz")
+    freq = hdu.header["CRVAL3"]
+    log.info(f"Loading frequency {freq*1.e-6} MHz")
     bmaj = hdu.header["BMAJ"] * 3600
     bmin = hdu.header["BMIN"] * 3600
 
@@ -201,6 +210,14 @@ for nui in map_list:
         log.warn(f"Only {rim_sel_frac*100.:.2f}% of the limb is of sufficient SNR, "
                  f"skipping slice at {crfreq:.3f} GHz")
         continue
+    freq = hdu.header["CRVAL3"]
+    if freq * 1e-6 < LOWFREQ:
+        log.warning(f"Skipping frequency slice at {freq*1.e-6} MHz per user request -- lower than cutoff frequency")
+        continue
+    if freq * 1e-6 > HIGHFREQ:
+        log.warning(f"Skipping frequency slice at {freq*1.e-6} MHz per user request -- higher than cutoff frequency")
+        continue
+
     nanmasksel = mask == 0
     mask = np.float64(mask)
     mask[nanmasksel] = np.nan
