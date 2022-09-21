@@ -45,6 +45,8 @@ parser.add_argument("--quiverspacing", dest="QUIVER_SPACE", default=30, type=int
 parser.add_argument("--snr", "-s", dest="SNR_CUTOFF", default=10., type=float, help="SNR cutoff to apply to Stokes P and I (per channel image)")
 parser.add_argument("--obsPAOffset",  dest="OBS_PA_OFFSET", default=0.0, type=float, help="Apply offset rotation (e.g. uncorrected parallactic angle) before plotting")
 parser.add_argument("--minPFrac",  dest="FIT_MIN_STOKES_P", default=0.01, type=float, help="Cutoff fractional polarization contribution to the fit below this")
+parser.add_argument("--maxPFrac",  dest="FIT_MAX_STOKES_P", default=1.00, type=float, help="Cutoff fractional polarization contribution (default 1.0)")
+parser.add_argument("--quiverScale",  dest="QUIVER_SCALE", default=16., type=float, help="Quiver scale (default 16.0)")
 parser.add_argument("--verbose", "-v", dest="VERBOSE", action='store_true', help="Increase verbosity")
 args = parser.parse_args()
 
@@ -53,9 +55,11 @@ fio,fqo,fuo,fvo = [args.imagePattern.format(st) for st in "IQUV"]
 DISK_TORUS_OUTER = args.DISK_TORUS_OUTER
 DISK_TORUS_INNER = args.DISK_TORUS_INNER
 FIT_MIN_STOKES_P = args.FIT_MIN_STOKES_P
+FIT_MAX_STOKES_P = args.FIT_MAX_STOKES_P
 CORRECT_FA = args.CORRECTIVE_FEED_ANGLE
 CORRECT_FD = args.CORRECTIVE_FARADAY_DEPTH
 TORUS_FILL_CUTOFF = args.TORUS_FILL_CUTOFF
+QUIVER_SCALE = args.QUIVER_SCALE
 
 VERBOSE = args.VERBOSE
 QUIVER_SPACE = np.abs(args.QUIVER_SPACE)
@@ -112,7 +116,7 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(9999))) + ["MFS"]:
         log.info(f"Estimated background noise as {rms*1e6:.3f} muJy")
 
     isnrmask = i > rms * SNR_CUTOFF
-    psnrmask = np.logical_and(np.logical_and(p > FIT_MIN_STOKES_P, p <= 1.0),
+    psnrmask = np.logical_and(np.logical_and(p > FIT_MIN_STOKES_P, p <= FIT_MAX_STOKES_P),
                               np.sqrt(u**2 + q**2) > rms * SNR_CUTOFF)
     xx, yy = meshgrid((arange(npix)-npix//2)*scale,
                       (arange(npix)-npix//2)*scale)
@@ -258,7 +262,7 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(9999))) + ["MFS"]:
     quiveropts = dict(headlength=0, headwidth=1, pivot='middle')
     ax.quiver(X + delta_bin * 0.5, Y + delta_bin * 0.5, 
               pixX, pixY,
-              scale=16, **quiveropts)
+              scale=QUIVER_SCALE, **quiveropts)
     
     ax.set_ylim(npix//2-1024,npix//2+1024)
     ax.set_xlim(npix//2-1024,npix//2+1024)
