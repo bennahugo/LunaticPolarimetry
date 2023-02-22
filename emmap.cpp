@@ -92,57 +92,57 @@ int main() {
         cout << endl;
         casa_igrf12.close();
     }
-    // {
-    //     ofstream tony_igrf13;
-    //     tony_igrf13.open ("tony_igrf.txt");
-    //     tony_igrf13 << "LON,LAT,STRENGTH(nT)" << endl;
-    //     cout << "Writing ALBUS IGRFv13 field map" << endl;
-    //     uint progress = 0;
-    //     uint nbar = 0;
-    //     double alt = 6.678137E+06;
-    //     for (auto ilon = lons.begin(); ilon != lons.end(); ++ilon) {
-    //         double clon = cos(*ilon), slon = sin(*ilon);
-    //         for (auto ilat = lats.begin(); ilat != lats.end(); ++ilat) {
-    //             double clat = cos(*ilat), slat = sin(*ilat);
-    //             double x,y,z;
-    //             jma_igrf13syn(2020,alt,clat,slat,clon,slon,&x,&y,&z);
-    //             tony_igrf13 << *ilon << "," << *ilat << "," << sqrt(x*x + y*y + z*z) * 1e9 << endl;
-    //         }
-    //         int fprogress = int(floor(float(++progress) / 1024. * 100));
-    //         if (fprogress >= nbar) {
-    //             cout << fprogress << (nbar <= 90 ? "%..." : "%");
-    //             nbar += 10;
-    //         }
-    //         cout.flush();
-    //     }
-    //     cout << endl;
-    //     tony_igrf13.close();
-    // }
-    // {
-    //     ofstream aips_magdip;
-    //     aips_magdip.open ("aips_magdip.txt");
-    //     aips_magdip << "LON,LAT,STRENGTH(nT)" << endl;
-    //     cout << "Writing AIPS dipole MAGDIP field map" << endl;
-    //     uint progress = 0;
-    //     uint nbar = 0;
-    //     float alt = 6.678137E+06;
-    //     for (auto ilon = lons.begin(); ilon != lons.end(); ++ilon) {
-    //         float lon = (float)*ilon;
-    //         for (auto ilat = lats.begin(); ilat != lats.end(); ++ilat) {
-    //             float lat = (float)*ilat;
-    //             float xyz[3];
-    //             magdip_aips(&lat, &lon, &alt, &xyz[0]);
-    //             aips_magdip << *ilon << "," << *ilat << "," << sqrt(xyz[0]*xyz[0] + xyz[1]*xyz[1] + xyz[2]*xyz[2]) * 1e5 << endl;
-    //         }
-    //         int fprogress = int(floor(float(++progress) / 1024. * 100));
-    //         if (fprogress >= nbar) {
-    //             cout << fprogress << (nbar <= 90 ? "%..." : "%");
-    //             nbar += 10;
-    //         }
-    //         cout.flush();
-    //     }
-    //     cout << endl;
-    //     aips_magdip.close();
-    // }
+    {
+        ofstream tony_igrf13;
+        tony_igrf13.open ("tony_igrf.txt");
+        tony_igrf13 << "LON,LAT,STRENGTH(nT)" << endl;
+        cout << "Writing ALBUS IGRFv13 field map" << endl;
+        uint progress = 0;
+        uint nbar = 0;
+        double alt = 6.678137E+06;
+        for (auto ilon = lons.begin(); ilon != lons.end(); ++ilon) {
+            double clon = cos(*ilon), slon = sin(*ilon);
+            for (auto ilat = lats.begin(); ilat != lats.end(); ++ilat) {
+                double clat = cos(*ilat), slat = sin(*ilat);
+                double x,y,z;
+                jma_igrf13syn(2020,alt,clat,slat,clon,slon,&x,&y,&z);
+                tony_igrf13 << *ilon << "," << *ilat << "," << sqrt(x*x + y*y + z*z) * 1e9 << endl;
+            }
+            int fprogress = int(floor(float(++progress) / 1024. * 100));
+            if (fprogress >= nbar) {
+                cout << fprogress << (nbar <= 90 ? "%..." : "%");
+                nbar += 10;
+            }
+            cout.flush();
+        }
+        cout << endl;
+        tony_igrf13.close();
+    }
+    {
+        ofstream aips_magdip;
+        aips_magdip.open ("aips_magdip.txt");
+        aips_magdip << "LON,LAT,STRENGTH(nT)" << endl;
+        cout << "Writing AIPS dipole MAGDIP field map" << endl;
+        uint progress = 0;
+        uint nbar = 0;
+        float alt = 6.678137E+06;
+        for (auto ilon = lons.begin(); ilon != lons.end(); ++ilon) {
+            float lon = (float)*ilon;
+            for (auto ilat = lats.begin(); ilat != lats.end(); ++ilat) {
+                float lat = (float)*ilat;
+                float xyz[3];
+                magdip_aips(&lat, &lon, &alt, &xyz[0]);
+                aips_magdip << *ilon << "," << *ilat << "," << sqrt(xyz[0]*xyz[0] + xyz[1]*xyz[1] + xyz[2]*xyz[2]) * 1e5 << endl;
+            }
+            int fprogress = int(floor(float(++progress) / 1024. * 100));
+            if (fprogress >= nbar) {
+                cout << fprogress << (nbar <= 90 ? "%..." : "%");
+                nbar += 10;
+            }
+            cout.flush();
+        }
+        cout << endl;
+        aips_magdip.close();
+    }
     cout << "<done>" << endl;
 }
