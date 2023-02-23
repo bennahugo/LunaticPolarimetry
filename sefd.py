@@ -197,3 +197,8 @@ plt.ylim(VMIN,VMAX)
 plt.grid(True)
 plt.show()
 
+with open("sefd.txt", "w+") as f:
+    f.write("FREQ[MHz]\tVertical SEFD[JY]\tHorizontal SEFD[JY]\tStokes I SEFD[JY]\n")
+    for nu, sefdvert, sefdhorz, sefdi in zip(chan_freqs*1e-6,SEFD[:, 0],SEFD[:, 3],np.sqrt(0.5 * (SEFD[:, 0]**2 + SEFD[:, 3]**2))):
+        f.write(f'{nu}\t{sefdvert}\t{sefdhorz}\t{sefdi}\n')
+
