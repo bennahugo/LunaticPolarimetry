@@ -94,7 +94,7 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(9999))) + ["MFS"]:
     #mjy2K = 1222 / ((wcs.wcs.crval[2] * 1e-9)**2*bmaj*bmin)
     mauchbeam = eval_mauch_beam(npix, scale, crfreq)
     feedcorr = np.deg2rad(2 * CORRECT_FA) + \
-               ((constants.c.value / (crfreq * 1.0e9))**2 * CORRECT_FD)
+               ((constants.c.value / (crfreq * 1.0e9))**2 * 0.5 * CORRECT_FD)
     
     i = hdu.data
     u = fits.open(fu)[0].data

@@ -47,7 +47,7 @@ parser.add_argument("--verbose", "-v", dest="VERBOSE", action='store_true', help
 parser.add_argument("--signconv",  dest="SIGNCONV", default=+1, help="Ninja parameter -- flips the sign to counter clockwise rotation if negative if the EVPA rotates North through West")
 parser.add_argument("--lowestfreq", dest="LOWFREQ", default=-np.inf, type=float, help="Lowest frequency (default disabled) -- specifies cutoff for loading frequency (in MHz) cubes for fitting")
 parser.add_argument("--highestfreq", dest="HIGHFREQ", default=+np.inf, type=float, help="Highest frequency (default disabled) -- specifies cutoff for loading frequency (in MHz) cubes for fitting")
-
+parser.add_argument("--rmscutoff", dest="RMSCUTOFF", default=np.inf, type=float, help="Plane RMS cutoff - specify as percentage")
 parser.add_argument("imagePattern", type=str, help="Pattern specifying which images to run fitter on. Expects each slice to conform to WSClean style output, e.g. "
                                                     "'lunarimgs/moon_snapshot-t0000-$xxx-{}-image.fits', where $xxx will be replaced by frequency slice numbers")
 args = parser.parse_args()
@@ -68,7 +68,7 @@ TORUS_FILL_CUTOFF = args.TORUS_FILL_CUTOFF
 DO_FIT_HV = args.DO_FIT_HV
 LOWFREQ = args.LOWFREQ
 HIGHFREQ = args.HIGHFREQ
-
+RMSCUTOFF = args.RMSCUTOFF
 log.info(':::DiskFit running with the following parameters:::\n'+
          '\n'.join(f'{k.ljust(30, " ")} = {v}' for k, v in vars(args).items())+
          "\n === DiskFit ===")
@@ -99,7 +99,9 @@ plane_q1_evpa = {}
 plane_q2_evpa = {}
 plane_mean_evpa = {}
 plane_std_evpa = {}
-
+bmin = -np.inf
+bmaj = -np.inf
+cellsize = -np.inf
 for nui in map_list:
     fi = fio.replace("$xxx",nui)
     if not os.path.exists(fi):
@@ -119,8 +121,9 @@ for nui in map_list:
         raise RuntimeError("Expect axis 3 of FITS file to be frequency axis -- unit Hz")
     freq = hdu.header["CRVAL3"]
     log.info(f"Loading frequency {freq*1.e-6} MHz")
-    bmaj = hdu.header["BMAJ"] * 3600
-    bmin = hdu.header["BMIN"] * 3600
+    bmaj = max(bmaj, ((hdu.header["BMAJ"] if np.isfinite(hdu.header["BMAJ"]) else -np.inf) * 3600))
+    bmin = max(bmin, ((hdu.header["BMIN"] if np.isfinite(hdu.header["BMIN"]) else -np.inf) * 3600))
+    cellsize = max(cellsize, abs(hdu.header["CDELT1"]))
 
     npix = wcs.pixel_shape[0]
     assert wcs.pixel_shape[0] == wcs.pixel_shape[1]
@@ -140,7 +143,12 @@ elif len(plane_nu) == 1:
     sys.exit(1)
 else: pass
 
-flagged_planes = np.array(plane_rms) > np.nanpercentile(plane_rms, 95.0)
+beam_area = (np.pi * bmin * bmaj) / (4*np.log(2)) / (cellsize * 3600.)**2 # beam area in npixels
+if not np.isfinite(beam_area) and beam_area <= 0:
+    raise RuntimeError("Beams areas not fitted")
+log.info(f"Using worst case beam area of {beam_area:.2f} pixels")
+
+flagged_planes = np.array(plane_rms) > (np.nanpercentile(plane_rms, RMSCUTOFF) if np.isfinite(RMSCUTOFF) else RMSCUTOFF)
 
 nuii = -1
 for nui in map_list:
@@ -378,7 +386,7 @@ def __error_func(argvec, d, m, w, mask, lda):
     # across the lunar disk. We follow the convention in BJ Burn 1966
     # our definition of EVPA is half a radian in the range
     # therefore fitting for RM on the EVPA gives half the RM in radians / m2
-    rmphase = np.rad2deg(lda.ravel()[mask]**2 * fd)
+    rmphase = np.rad2deg(0.5 * lda.ravel()[mask]**2 * fd)
     # note the offset is fitted for 2 * angle because that is how it is applied
     # in the rotation matrix together with the parallactic angle rotation!
     return w.ravel()[mask] * angle_diff(m.ravel()[mask] + 2 * offset + rmphase, d.ravel()[mask])
@@ -471,7 +479,7 @@ if not fitres.success > 0:
 cov = np.linalg.inv(np.dot(fitres.jac.T, fitres.jac)) # hessian inverse
 cost = np.sum(__error_func(fitres.x, **kwargs)**2, dtype=np.float64)
 N = np.sum(np.hstack(all_mask).ravel(), dtype=np.float64)
-cov = cov * fitres.cost / (N - 2)
+cov = cov * fitres.cost / (N / beam_area - 2)
 stdfit = np.sqrt(np.diag(cov))
 corrective_term(nu_considered, fitres.x[0], fitres.x[1], 
                 np.hstack(all_measured_evpa).ravel(),
