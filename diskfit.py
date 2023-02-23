@@ -386,7 +386,7 @@ def __error_func(argvec, d, m, w, mask, lda):
     # across the lunar disk. We follow the convention in BJ Burn 1966
     # our definition of EVPA is half a radian in the range
     # therefore fitting for RM on the EVPA gives half the RM in radians / m2
-    rmphase = np.rad2deg(0.5 * lda.ravel()[mask]**2 * fd)
+    rmphase = np.rad2deg(lda.ravel()[mask]**2 * fd)
     # note the offset is fitted for 2 * angle because that is how it is applied
     # in the rotation matrix together with the parallactic angle rotation!
     return w.ravel()[mask] * angle_diff(m.ravel()[mask] + 2 * offset + rmphase, d.ravel()[mask])
@@ -407,7 +407,7 @@ def corrective_term(nu_considered, offset, fd, d, w, lda, mask, cov,
                                constants.c.value / np.min(list(nu_considered)),
                                1024)
 
-    rmphase = np.rad2deg(0.5 * lda_linspace**2 * fd)
+    rmphase = np.rad2deg(lda_linspace**2 * fd)
     corrective_phase_band = -(2.0 * offset + rmphase)
     L = np.linalg.cholesky(cov + 1e-10*np.eye(2))
     sampled_lda = []
@@ -416,9 +416,9 @@ def corrective_term(nu_considered, offset, fd, d, w, lda, mask, cov,
         xi = np.random.randn(2)
         off_sample, fd_sample = L.dot(xi)
         sample_lda = lda.ravel()[di]
-        rmphasemean = np.rad2deg(0.5 * sample_lda**2 * fd)
+        rmphasemean = np.rad2deg(sample_lda**2 * fd)
         dist_mean = (2.0 * offset + rmphasemean)
-        rmphasecov = np.rad2deg(0.5 * sample_lda**2 * fd_sample)
+        rmphasecov = np.rad2deg(sample_lda**2 * fd_sample)
         sampled_lda.append(sample_lda)
         sampled_cov.append(-(rmphasecov + off_sample) - dist_mean)
     if DOPLOT:
