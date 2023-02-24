@@ -40,7 +40,8 @@ parser.add_argument("--kurt", dest="ABS_KURT_CUTOFF", default=2., type=float, he
 parser.add_argument("--torusout", "-o", dest="DISK_TORUS_OUTER", default=0.276040, type=float, help="Outer torus boundary for contributing EVPA angles (should be the outer limb radius in degrees)")
 parser.add_argument("--torusin", "-i", dest="DISK_TORUS_INNER", default=0.25, type=float, help="Inner torus boundary for contributing EVPA angles (should exclude reflected RFI)")
 parser.add_argument("--obsPAOffset",  dest="OBS_PA_OFFSET", default=0.0, type=float, help="Apply offset rotation (e.g. uncorrected parallactic angle) before fitting")
-parser.add_argument("--minPFrac",  dest="FIT_MIN_STOKES_P", default=0.01, type=float, help="Cutoff fractional polarization contribution to the fit below this")
+parser.add_argument("--minpfrac",  dest="FIT_MIN_STOKES_P", default=0.01, type=float, help="Cutoff fractional polarization contribution to the fit below this")
+parser.add_argument("--maxpfrac",  dest="FIT_MAX_STOKES_P", default=0.35, type=float, help="Cutoff fractional polarization contribution to the fit above this")
 parser.add_argument("--torusFillCutoff",  dest="TORUS_FILL_CUTOFF", default=0.35, type=float, help="Discard slices with fewer than this fractional number of points meeting SNR criteria within the torus (mostly empty torii). Expect 0 <= x <= 1.0")
 parser.add_argument("--doFitHV",  dest="DO_FIT_HV", action='store_true', help="Fit also for crosshand phase (assume no circular emission from blackbody -- inner torus cut should be big enough to discard reflected terrestial RFI)")
 parser.add_argument("--verbose", "-v", dest="VERBOSE", action='store_true', help="Increase verbosity")
@@ -64,6 +65,7 @@ DISK_TORUS_OUTER = args.DISK_TORUS_OUTER
 DISK_TORUS_INNER = args.DISK_TORUS_INNER
 OBS_PA_OFFSET = args.OBS_PA_OFFSET
 FIT_MIN_STOKES_P = args.FIT_MIN_STOKES_P
+FIT_MAX_STOKES_P = args.FIT_MAX_STOKES_P
 TORUS_FILL_CUTOFF = args.TORUS_FILL_CUTOFF
 DO_FIT_HV = args.DO_FIT_HV
 LOWFREQ = args.LOWFREQ
@@ -197,7 +199,7 @@ for nui in map_list:
         log.info(f"Estimated background noise as {rms*1e6:.3f} muJy")
     isnrmask = i > rms * SNR_CUTOFF
 
-    psnrmask = np.logical_and(np.logical_and(p > FIT_MIN_STOKES_P, p <= 1.0),
+    psnrmask = np.logical_and(np.logical_and(p > FIT_MIN_STOKES_P, p <= FIT_MAX_STOKES_P),
                               np.sqrt(u**2 + q**2) > rms * SNR_CUTOFF)
     xx, yy = meshgrid((arange(npix)-npix//2)*scale,
                       (arange(npix)-npix//2)*scale)
