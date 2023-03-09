@@ -232,7 +232,7 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(9999))) + ["MFS"]:
     masked_q = q.copy()[0,0,:,:]
     masked_u = u.copy()[0,0,:,:]
     masked_i = i.copy()[0,0,:,:]
-    mask = np.float64(moonmask * isnrmask * psnrmask)
+    mask = np.float64(rim_mask * isnrmask * psnrmask)
     mask[np.abs(mask) < 1.0e-3] = np.nan
 
     masked_q = q * mask
