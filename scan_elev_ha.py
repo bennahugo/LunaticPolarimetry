@@ -187,5 +187,5 @@ with tbl(args.ms, ack=False, readonly=False) as t:
            log.info("\tAz {:.0f} deg".format(np.rad2deg(az[pamap])))
            log.info("\tParAng {:.0f} deg".format(np.rad2deg(arraypa[pamap])))
            log.info("\tHA {:.0f} deg".format(np.rad2deg(ha[pamap])))
-           log.info("\tMJD {:.3f}".format(timemsunix[len(timemsunix)//2] / (3600.*24.)))
+           log.info("\tMJD {:.3f}".format(msuniqtime[len(msuniqtime)//2] / (3600.*24.)))
 
