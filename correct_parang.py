@@ -29,6 +29,38 @@ def create_logger():
 
 log, log_console_handler, log_formatter = create_logger()
 
+def add_column(table, col_name, like_col="DATA", like_type=None):
+    """
+    Lifted from ratt-ru/cubical
+    Inserts a new column into the measurement set.
+    Args:
+        col_name (str):
+            Name of target column.
+        like_col (str, optional):
+            Column will be patterned on the named column.
+        like_type (str or None, optional):
+            If set, column type will be changed.
+    Returns:
+        bool:
+            True if a new column was inserted, else False.
+    """
+
+    if col_name not in table.colnames():
+        # new column needs to be inserted -- get column description from column 'like_col'
+        desc = table.getcoldesc(like_col)
+
+        desc[str('name')] = str(col_name)
+        desc[str('comment')] = str(desc['comment'].replace(" ", "_"))  # got this from Cyril, not sure why
+        dminfo = table.getdminfo(like_col)
+        dminfo[str("NAME")] =  "{}-{}".format(dminfo["NAME"], col_name)
+
+        # if a different type is specified, insert that
+        if like_type:
+            desc[str('valueType')] = like_type
+        table.addcols(desc, dminfo)
+        return True
+    return False
+
 parser = argparse.ArgumentParser(description="Parallactic corrector for MeerKAT")
 parser.add_argument("ms", type=str, help="Database to correct")
 parser.add_argument("--field", "-f", dest="field", type=int, default=0, help="Field index to correct")
@@ -45,6 +77,10 @@ parser.add_argument("--rawcolumn", "-rc", dest="rawcolumn", default="DATA", help
 parser.add_argument("--noparang", "-npa", dest="noparang", action="store_true", help="Apply no parallactic angle derotation -- useful only to apply feedflip matrix")
 parser.add_argument("--invertPA", "-ip", dest="invertpa", action="store_true", help="Apply parallactic angle corruption instead of correction")
 parser.add_argument("--crosshandphase", "-chp", dest="crossphase", default=0.0, type=float, help="Apply crosshand phase in degrees")
+parser.add_argument("--telescopelat", dest="latitude", default="-30:42:47.41", type=str, help="Telescope latitude dd:mm:ss")
+parser.add_argument("--telescopelon", dest="longitude", default="21:26:38.0", type=str, help="Telescope longitude dd:mm:ss")
+parser.add_argument("--telescopealt", dest="altitude", default=1054, type=float, help="Telescope altitude in meters")
+
 args = parser.parse_args()
 
 if args.plot:
@@ -52,11 +88,11 @@ if args.plot:
     import matplotlib.dates as mdates
     log.info("Enabling plotting")
 
-meerkat = ephem.Observer()
-meerkat.lat = "-30:42:47.41"
-meerkat.long = "21:26:38.0"
-meerkat.elevation = 1054
-meerkat.epoch = ephem.J2000
+ephemobservatory = ephem.Observer()
+ephemobservatory.lat = args.latitude
+ephemobservatory.long = args.longitude
+ephemobservatory.elevation = args.altitude
+ephemobservatory.epoch = ephem.J2000
 
 with tbl(args.ms, ack=False) as t:
     with taql("select * from $t where FIELD_ID=={}".format(args.field)) as tt:
@@ -69,10 +105,10 @@ with tbl(args.ms, ack=False) as t:
         log.info("Observation spans '{}' and '{}' UTC".format(
                  start_time_Z, end_time_Z))
 dm = measures()
-meerkat.date = start_time_Z
-st = meerkat.date
-meerkat.date = end_time_Z
-et = meerkat.date
+ephemobservatory.date = start_time_Z
+st = ephemobservatory.date
+ephemobservatory.date = end_time_Z
+et = ephemobservatory.date
 TO_SEC = 3600*24.0
 nstep = int(np.round((float(et)*TO_SEC - float(st)*TO_SEC) / (args.stepsize*60.)))
 if not args.noparang:
@@ -118,9 +154,9 @@ pa = np.zeros((len(anames), nstep), np.float32)
 zenith = dm.direction('AZELGEO','0deg','90deg')
 if not args.noparang:
     for ti, t in enumerate(time):
-        meerkat.date = t
-        t_iso8601 = meerkat.date.datetime().strftime("%Y-%m-%dT%H:%M:%S.%f")
-        fieldEphem.compute(meerkat)
+        ephemobservatory.date = t
+        t_iso8601 = ephemobservatory.date.datetime().strftime("%Y-%m-%dT%H:%M:%S.%f")
+        fieldEphem.compute(ephemobservatory)
         az[ti] = fieldEphem.az
         el[ti] = fieldEphem.alt
         ra[ti] = fieldEphem.a_ra
@@ -215,7 +251,11 @@ if not args.sim:
     timepaunix = np.array(list(map(lambda x: x.replace(tzinfo=pytz.UTC).timestamp(), timepadt)))
     nrowsput = 0
     with tbl(args.ms, ack=False, readonly=False) as t:
-        with taql("select * from $t where FIELD_ID=={}".format(args.field)) as tt:
+        if args.storecolumn not in t.colnames():
+            log.info(f"Inserting column {args.storecolumn}. Do not interrupt")
+            add_column(t, args.storecolumn)
+            log.info(f"Inserted column {args.storecolumn}")
+        with taql("select * from $t where FIELD_ID=={} and DATA_DESC_ID=={}".format(args.field, args.ddid)) as tt:
             nrow = tt.nrows()
             nchunk = nrow // args.chunksize + int(nrow % args.chunksize > 0)
             for ci in range(nchunk):
