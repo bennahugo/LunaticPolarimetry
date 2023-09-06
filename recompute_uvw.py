@@ -46,6 +46,8 @@ parser.add_argument("--doPlot", "-dp", dest="plot", action="store_true", help="M
 parser.add_argument("--simulate", "-s", dest="sim", action="store_true", help="Simulate only -- make no modifications to database")
 parser.add_argument("--chunksize", "-cs", type=int, dest="chunksize", default=1000, help="Chunk size in rows")
 parser.add_argument("--verbose", "-v", action="store_true", dest="verbose", help="Increase verbosity")
+parser.add_argument("--minstepsize", type=float, default=0.0, dest="minstepsize", help="Minimum step size")
+
 
 args = parser.parse_args()
 
@@ -77,7 +79,7 @@ meerkat.date = end_time_Z
 et = meerkat.date
 TO_SEC = 3600*24.0
 uniqdbtime = np.sort(np.unique(dbtime))
-mintimedelta = np.min(np.abs(uniqdbtime[1:] - uniqdbtime[:-1]))
+mintimedelta = max(args.minstepsize, np.min(np.abs(uniqdbtime[1:] - uniqdbtime[:-1])))
 nstep = int(np.round((float(et)*TO_SEC - float(st)*TO_SEC) / (mintimedelta/10.0)))
 log.info("Computing RADEC in {} steps of {}s each".format(nstep, mintimedelta/10.0))
 timecoord = time = np.linspace(st,et,nstep)

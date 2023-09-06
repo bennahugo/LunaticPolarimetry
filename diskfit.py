@@ -45,7 +45,7 @@ parser.add_argument("--maxpfrac",  dest="FIT_MAX_STOKES_P", default=0.35, type=f
 parser.add_argument("--torusFillCutoff",  dest="TORUS_FILL_CUTOFF", default=0.35, type=float, help="Discard slices with fewer than this fractional number of points meeting SNR criteria within the torus (mostly empty torii). Expect 0 <= x <= 1.0")
 parser.add_argument("--doFitHV",  dest="DO_FIT_HV", action='store_true', help="Fit also for crosshand phase (assume no circular emission from blackbody -- inner torus cut should be big enough to discard reflected terrestial RFI)")
 parser.add_argument("--verbose", "-v", dest="VERBOSE", action='store_true', help="Increase verbosity")
-parser.add_argument("--signconv",  dest="SIGNCONV", default=+1, help="Ninja parameter -- flips the sign to counter clockwise rotation if negative if the EVPA rotates North through West")
+parser.add_argument("--signconv",  dest="SIGNCONV", type=float, default=+1, help="Ninja parameter -- flips the sign to counter clockwise rotation if negative if the EVPA rotates North through West")
 parser.add_argument("--lowestfreq", dest="LOWFREQ", default=-np.inf, type=float, help="Lowest frequency (default disabled) -- specifies cutoff for loading frequency (in MHz) cubes for fitting")
 parser.add_argument("--highestfreq", dest="HIGHFREQ", default=+np.inf, type=float, help="Highest frequency (default disabled) -- specifies cutoff for loading frequency (in MHz) cubes for fitting")
 parser.add_argument("--rmscutoff", dest="RMSCUTOFF", default=np.inf, type=float, help="Plane RMS cutoff - specify as percentage")
@@ -395,7 +395,7 @@ def __error_func(argvec, d, m, w, mask, lda):
 
 def __hv_error_func(argvec, d, m, w, mask, lda):
     offset,gradient = argvec
-    return w.ravel()[mask] * angle_diff(offset + gradient*lda, d.ravel()[mask])
+    return w.ravel()[mask] * angle_diff(offset + gradient*(constants.c.value/lda), d.ravel()[mask])
 
 
 def corrective_term(nu_considered, offset, fd, d, w, lda, mask, cov,
@@ -511,6 +511,6 @@ if DO_FIT_HV:
     cov = np.linalg.inv(np.dot(fitres.jac.T, fitres.jac)) # hessian inverse
     cov = cov * fitres.cost / (normw.size - 2)
     stdfit = np.sqrt(np.diag(cov))
-    log.info("Fitted HV: {0:.3f} +/- {1:.3f} deg".format(fitres.x[0], stdfit[0]))
-    log.info("Fitted HV slope: {0:.3f} +/- {1:.3f} deg".format(fitres.x[1], stdfit[1]))
+    log.info("Fitted HV: {0:.3f} +/- {1:.3f} deg".format(fitres.x[0]*0.5, stdfit[0]*0.5)) # redefine to -90,+90 domain
+    log.info("Fitted HV slope: {0:.3f} +/- {1:.3f} deg".format(fitres.x[1]*0.5, stdfit[1]*0.5))
 

@@ -264,8 +264,8 @@ for nui in list(map(lambda a:"{0:04d}".format(a), range(9999))) + ["MFS"]:
               pixX, pixY,
               scale=QUIVER_SCALE, **quiveropts)
     
-    ax.set_ylim(npix//2-1024,npix//2+1024)
-    ax.set_xlim(npix//2-1024,npix//2+1024)
+    ax.set_ylim(npix//2-npix//2,npix//2+npix//2)
+    ax.set_xlim(npix//2-npix//2,npix//2+npix//2)
     log.info("Saving 'Moon.{0:.3f}GHz.png'...".format(crfreq))
     plt.savefig("Moon.{0:.3f}GHz.png".format(crfreq))
 
