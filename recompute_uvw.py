@@ -47,6 +47,7 @@ parser.add_argument("--simulate", "-s", dest="sim", action="store_true", help="S
 parser.add_argument("--chunksize", "-cs", type=int, dest="chunksize", default=1000, help="Chunk size in rows")
 parser.add_argument("--verbose", "-v", action="store_true", dest="verbose", help="Increase verbosity")
 parser.add_argument("--minstepsize", type=float, default=0.0, dest="minstepsize", help="Minimum step size")
+parser.add_argument("--stoponchunk", type=int, default=-1, dest='stoponchunk', help="Stops execution on specified chunk - debug")
 
 
 args = parser.parse_args()
@@ -217,6 +218,9 @@ with tbl(args.ms, ack=False, readonly=False) as t:
             log.info("\t{} chunk {}/{}".format("Corrected" if not args.sim else "Simulated", ci+1, nchunk))
 
             nrowsput += crow
+            if args.stoponchunk != -1 and ci + 1 >= args.stoponchunk:
+                nrowsput = nrow
+                break
     assert nrow == nrowsput
     if args.plot:
         plt.legend()

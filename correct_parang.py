@@ -142,6 +142,13 @@ else:
                                                                               np.rad2deg(pos[args.field][0,0]),
                                                                               np.rad2deg(pos[args.field][0,1])))
 
+with tbl(args.ms+"::DATA_DESCRIPTION", ack=False) as t:
+    if args.ddid < 0 or args.ddid >= t.nrows():
+        raise RuntimeError("Invalid DDID selected")
+    spwsel = t.getcol("SPECTRAL_WINDOW_ID")[args.ddid]
+    poldescsel = t.getcol("POLARIZATION_ID")[args.ddid]
+ 
+
 az = np.zeros(nstep, dtype=np.float32)
 el = az.copy()
 ra = az.copy()
@@ -196,34 +203,30 @@ if not args.noparang:
             plt.show()
 
     with tbl(args.ms+"::FEED", ack=False) as t:
-        receptor_aid = t.getcol("ANTENNA_ID")
-        if len(receptor_aid) != len(anames):
-            raise RuntimeError("Receptor angles not all filed for the antennas in the ::FEED keyword table")
-        receptor_angles = dict(zip(receptor_aid, t.getcol("RECEPTOR_ANGLE")[:,0]))
-        if args.fa is not None:
-            receptor_angles[...] = float(args.fa)
-            log.info("Overriding F Jones angle to {0:.3f} for all antennae".format(float(args.fa)))
-        else:
-            log.info("Applying the following feed angle offsets to parallactic angles:")
-            for ai, an in enumerate(anames):
-                log.info("\t {0:s}: {1:.3f} degrees".format(an, np.rad2deg(receptor_angles.get(ai, 0.0))))
+        with taql("select * from $t where SPECTRAL_WINDOW_ID=={}".format(spwsel)) as tt:
+            receptor_aid = tt.getcol("ANTENNA_ID")
+            if len(receptor_aid) != len(anames):
+                raise RuntimeError("Receptor angles not all filed for the antennas in the ::FEED keyword table")
+            receptor_angles = dict(zip(receptor_aid, tt.getcol("RECEPTOR_ANGLE")[:,0]))
+            if args.fa is not None:
+                receptor_angles[...] = float(args.fa)
+                log.info("Overriding F Jones angle to {0:.3f} for all antennae".format(float(args.fa)))
+            else:
+                log.info("Applying the following feed angle offsets to parallactic angles:")
+                for ai, an in enumerate(anames):
+                    log.info("\t {0:s}: {1:.3f} degrees".format(an, np.rad2deg(receptor_angles.get(ai, 0.0))))
 
-    raarr = np.empty(len(anames), dtype=int)
-    for aid in range(len(anames)):
-        raarr[aid] = receptor_angles[aid]
+        raarr = np.empty(len(anames), dtype=int)
+        for aid in range(len(anames)):
+            raarr[aid] = receptor_angles[aid]
 
 
 with tbl(args.ms+"::POLARIZATION", ack=False) as t:
-    poltype = t.getcol("CORR_TYPE")
+    poltype = t.getcol("CORR_TYPE")[poldescsel]
     # must be linear
-    for p in poltype:
-        if any(p - np.array([9,10,11,12]) != 0):
-            raise RuntimeError("Must be full correlation linear system being corrected")
+    if any(poltype - np.array([9,10,11,12]) != 0):
+        raise RuntimeError("Must be full correlation linear system being corrected")
 
-with tbl(args.ms+"::DATA_DESCRIPTION", ack=False) as t:
-    if args.ddid < 0 or args.ddid >= t.nrows():
-        raise RuntimeError("Invalid DDID selected")
-    spwsel = t.getcol("SPECTRAL_WINDOW_ID")[args.ddid]
 
 with tbl(args.ms+"::SPECTRAL_WINDOW", ack=False) as t:
     chan_freqs = t.getcol("CHAN_FREQ")[spwsel]
